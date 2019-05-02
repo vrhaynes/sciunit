@@ -65,7 +65,9 @@ class Test(SciUnit):
 
     observation_schema = None
     """A schema that the observation must adhere to (validated by cerberus).
-    Can also be a list of schemas, one of which the observation must match."""
+    Can also be a list of schemas, one of which the observation must match.
+    If it is a list, each schema in the list can optionally be named by putting
+    (name, schema) tuples in that list."""
 
     params_schema = None
     """A schema that the params must adhere to (validated by cerberus).
@@ -84,7 +86,9 @@ class Test(SciUnit):
             raise ObservationError("Observation mean cannot be 'None'.")
         if self.observation_schema:
             if isinstance(self.observation_schema, list):
-                schema = {'oneof_schema': self.observation_schema,
+                schemas = [x[1] if isinstance(x, tuple) else x
+                           for x in self.observation_schema]
+                schema = {'oneof_schema': schemas,
                           'type': 'dict'}
             else:
                 schema = {'schema': self.observation_schema,
@@ -94,6 +98,16 @@ class Test(SciUnit):
             if not v.validate({'observation': observation}):
                 raise ObservationError(v.errors)
         return observation
+
+    @classmethod
+    def observation_schema_names(cls):
+        """Return a list of names of observation schema, if they are set."""
+        names = []
+        if cls.observation_schema:
+            if isinstance(cls.observation_schema, list):
+                names = [x[0] if isinstance(x, tuple) else 'Schema %d' % (i+1)
+                         for i, x in enumerate(cls.observation_schema)]
+        return names
 
     def validate_params(self, params):
         """Validate the params provided to the constructor.
@@ -145,6 +159,16 @@ class Test(SciUnit):
         if not capable and not skip_incapable:
             raise CapabilityError(model, c)
         return capable
+
+    def condition_model(self, model):
+        """Update the model in any way needed before generating the prediction.
+
+        This could include updating parameters such as simulation durations
+        that do not define the model but do define experiments performed on
+        the model.
+        No default implementation.
+        """
+        pass
 
     def generate_prediction(self, model):
         """Generate a prediction from a model using the required capabilities.
@@ -281,14 +305,16 @@ class Test(SciUnit):
             raise score.score  # An exception.
         return score
 
-    def check(self, model, skip_incapable=True, stop_on_error=True):
+    def check(self, model, skip_incapable=True, stop_on_error=True,
+              require_extra=False):
         """Check to see if the test can run this model.
 
         Like judge, but without actually running the test. Just returns a Score
         indicating whether the model can take the test or not.
         """
         try:
-            if self.check_capabilities(model, skip_incapable=skip_incapable):
+            if self.check_capabilities(model, skip_incapable=skip_incapable,
+                                       require_extra=require_extra):
                 score = TBDScore(None)
             else:
                 score = NAScore(None)
